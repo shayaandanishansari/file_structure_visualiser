@@ -135,7 +135,6 @@ linux/runner/GeneratedPluginRegistrant.*
 ############################
 
 # Flutter web artifacts
-lib/generated_plugin_registrant.dart
 
 # Common web tooling
 node_modules/
