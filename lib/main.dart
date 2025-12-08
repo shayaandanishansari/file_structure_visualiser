@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-
 import 'src/ui/tree_app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FileStructureCreatorApp());
+  runApp(const FileStructureVisualiserApp());
 }
 
-class FileStructureCreatorApp extends StatelessWidget {
-  const FileStructureCreatorApp({super.key});
+class FileStructureVisualiserApp extends StatelessWidget {
+  const FileStructureVisualiserApp({super.key});
 
   @override
   Widget build(BuildContext context) {

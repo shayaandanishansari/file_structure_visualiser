@@ -16,17 +16,18 @@ class _TreeAppState extends State<TreeApp> {
   final List<Node> roots = [];
   Node? selected;
 
-  // inline rename
+  // Inline rename
   Node? editingNode;
   final TextEditingController _editCtrl = TextEditingController();
   final FocusNode _editFocus = FocusNode();
 
-  final TextEditingController pathCtrl =
-      TextEditingController(text: r'C:\Users\shaya\Downloads\my_project');
+  late final FileExporter exporter;
 
   @override
   void initState() {
     super.initState();
+    exporter = createFileExporter();
+
     final project = Node(name: 'Project', isFolder: true);
     roots.add(project);
     selected = project;
@@ -36,7 +37,6 @@ class _TreeAppState extends State<TreeApp> {
   void dispose() {
     _editCtrl.dispose();
     _editFocus.dispose();
-    pathCtrl.dispose();
     super.dispose();
   }
 
@@ -54,7 +54,7 @@ class _TreeAppState extends State<TreeApp> {
               top: 12,
               child: Row(
                 children: [
-                  Expanded(child: _pathBox()),
+                  Expanded(child: _pathBoxReadOnly()),
                   const SizedBox(width: 10),
                   _iconBtn(
                     icon: Icons.delete_outline_rounded,
@@ -64,8 +64,8 @@ class _TreeAppState extends State<TreeApp> {
                   const SizedBox(width: 10),
                   _iconBtn(
                     icon: Icons.download_rounded,
-                    tooltip: 'Create folders/files (or ZIP on web)',
-                    onTap: _exportStructure,
+                    tooltip: 'Export ZIP (safe mode)',
+                    onTap: _exportZipSafe,
                   ),
                 ],
               ),
@@ -125,7 +125,6 @@ class _TreeAppState extends State<TreeApp> {
   }
 
   /// ---------- TREE RENDER ----------
-
   Widget _buildForest() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,8 +177,7 @@ class _TreeAppState extends State<TreeApp> {
     final isEditing = identical(n, editingNode);
     final bg = n.isFolder ? const Color(0xFF2C2F41) : const Color(0xFF2A2330);
     final border = isSel ? Colors.white.withOpacity(.85) : Colors.white24;
-    final icon =
-        n.isFolder ? Icons.folder_rounded : Icons.insert_drive_file_rounded;
+    final icon = n.isFolder ? Icons.folder_rounded : Icons.insert_drive_file;
 
     final chip = Container(
       height: _Sizes.nodeH,
@@ -215,8 +213,7 @@ class _TreeAppState extends State<TreeApp> {
             )
           else
             ConstrainedBox(
-              constraints:
-                  const BoxConstraints(minWidth: 110, maxWidth: 260),
+              constraints: const BoxConstraints(minWidth: 110, maxWidth: 260),
               child: IntrinsicWidth(
                 child: TextField(
                   controller: _editCtrl,
@@ -250,10 +247,9 @@ class _TreeAppState extends State<TreeApp> {
   }
 
   /// ---------- CONTROLS ----------
-
-  Widget _pathBox() {
+  Widget _pathBoxReadOnly() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF15172A),
         borderRadius: BorderRadius.circular(12),
@@ -264,15 +260,15 @@ class _TreeAppState extends State<TreeApp> {
           const Icon(Icons.folder_open, color: Colors.white70, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              controller: pathCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText:
-                    r'Output path on desktop, or project name on web',
-                hintStyle: TextStyle(color: Colors.white54),
+            child: Text(
+              exporter.defaultDisplayPath,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12.8,
+                fontWeight: FontWeight.w500,
+                letterSpacing: .15,
               ),
             ),
           ),
@@ -320,7 +316,7 @@ class _TreeAppState extends State<TreeApp> {
             color: color.withOpacity(.3),
             blurRadius: 20,
             offset: const Offset(0, 8),
-          ),
+          )
         ],
       ),
       child: Column(
@@ -381,7 +377,6 @@ class _TreeAppState extends State<TreeApp> {
   }
 
   /// ---------- ACTIONS ----------
-
   void _addSibling({required bool isFolder}) {
     if (selected == null) {
       _toast('Select a node first.');
@@ -390,17 +385,21 @@ class _TreeAppState extends State<TreeApp> {
     setState(() {
       final cur = selected!;
       final base = isFolder ? 'New Folder' : 'New File';
+
       if (cur.isRoot) {
-        final n = Node(name: _uniqueName(roots, base), isFolder: isFolder);
+        final n = Node(
+          name: PathUtils.uniqueName(roots.map((e) => e.name), base),
+          isFolder: isFolder,
+        );
         final i = roots.indexOf(cur);
         roots.insert(i + 1, n);
       } else {
         final list = cur.parent!.children;
         final n = Node(
-          name: _uniqueName(list, base),
+          name: PathUtils.uniqueName(list.map((e) => e.name), base),
           isFolder: isFolder,
-          parent: cur.parent,
-        );
+        )..parent = cur.parent;
+
         final i = list.indexOf(cur);
         list.insert(i + 1, n);
       }
@@ -416,10 +415,9 @@ class _TreeAppState extends State<TreeApp> {
       final cur = selected!;
       final base = isFolder ? 'New Folder' : 'New File';
       final n = Node(
-        name: _uniqueName(cur.children, base),
+        name: PathUtils.uniqueName(cur.children.map((e) => e.name), base),
         isFolder: isFolder,
-        parent: cur,
-      );
+      )..parent = cur;
       cur.children.add(n);
     });
   }
@@ -434,6 +432,7 @@ class _TreeAppState extends State<TreeApp> {
       if (target.isRoot) {
         final idx = roots.indexOf(target);
         roots.removeAt(idx);
+
         if (roots.isEmpty) {
           final fresh = Node(name: 'Project', isFolder: true);
           roots.add(fresh);
@@ -443,11 +442,10 @@ class _TreeAppState extends State<TreeApp> {
         }
       } else {
         final parent = target.parent!;
-        final list = parent.children;
-        final idx = list.indexOf(target);
-        list.removeAt(idx);
+        parent.children.remove(target);
         selected = parent;
       }
+
       if (identical(editingNode, target)) {
         editingNode = null;
       }
@@ -469,37 +467,22 @@ class _TreeAppState extends State<TreeApp> {
   }
 
   void _commitRename(Node node, String raw) {
-    final newName = sanitizeNodeName(raw);
+    final newName = PathUtils.sanitizeComponent(raw);
     setState(() {
       node.name = newName;
       editingNode = null;
     });
   }
 
-  String _uniqueName(List<Node> siblings, String base) {
-    final existing = siblings.map((e) => e.name).toSet();
-    if (!existing.contains(base)) return base;
-    var i = 2;
-    while (existing.contains('$base $i')) {
-      i++;
-    }
-    return '$base $i';
-  }
+  Future<void> _exportZipSafe() async {
+    final result = await exporter.exportZip(roots);
 
-  Future<void> _exportStructure() async {
-    final base = pathCtrl.text.trim();
-    if (base.isEmpty) {
-      _toast('Please enter an output path or project name.');
-      return;
-    }
-    try {
-      final msg = await exportTree(
-        roots: roots,
-        baseNameOrPath: base,
-      );
-      _toast(msg);
-    } catch (e) {
-      _toast('Failed: $e');
+    if (!mounted) return;
+
+    if (result.success && result.savedPath != null) {
+      _toast('${result.message}\n${result.savedPath}');
+    } else {
+      _toast(result.message);
     }
   }
 
@@ -516,14 +499,13 @@ class _TreeAppState extends State<TreeApp> {
 }
 
 /// ---------- DRAWING HELPERS ----------
-
 class _Sizes {
   static const double indent = 32;
   static const double nodeH = 40;
 }
 
 class _VerticalPainter extends CustomPainter {
-  const _VerticalPainter({required this.show});
+  _VerticalPainter({required this.show});
   final bool show;
 
   @override
@@ -538,12 +520,11 @@ class _VerticalPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _VerticalPainter oldDelegate) =>
-      oldDelegate.show != show;
+  bool shouldRepaint(covariant _VerticalPainter old) => old.show != show;
 }
 
 class _ElbowPainter extends CustomPainter {
-  const _ElbowPainter({required this.continuesDown});
+  _ElbowPainter({required this.continuesDown});
   final bool continuesDown;
 
   @override
@@ -556,14 +537,14 @@ class _ElbowPainter extends CustomPainter {
     final cx = size.width / 2;
     final cy = size.height / 2;
 
-    canvas.drawLine(Offset(cx, 0), Offset(cx, cy), p); // vertical up
-    canvas.drawLine(Offset(cx, cy), Offset(size.width, cy), p); // elbow right
+    canvas.drawLine(Offset(cx, 0), Offset(cx, cy), p);
+    canvas.drawLine(Offset(cx, cy), Offset(size.width, cy), p);
     if (continuesDown) {
       canvas.drawLine(Offset(cx, cy), Offset(cx, size.height), p);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _ElbowPainter oldDelegate) =>
-      oldDelegate.continuesDown != continuesDown;
+  bool shouldRepaint(covariant _ElbowPainter old) =>
+      old.continuesDown != continuesDown;
 }

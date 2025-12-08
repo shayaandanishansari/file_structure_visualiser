@@ -1,3 +1,4 @@
+// ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:typed_data';
 
@@ -5,74 +6,71 @@ import 'package:archive/archive.dart';
 
 import '../../models/node.dart';
 import '../path_utils.dart';
+import 'file_export.dart';
 
-Future<String> platformExportTree({
-  required List<Node> roots,
-  required String baseNameOrPath,
-}) async {
-  final archive = Archive();
+class WebFileExporter implements FileExporter {
+  @override
+  String get defaultDisplayPath => 'Browser download';
 
-  final rootDirName = sanitizeFileComponent(
-    baseNameOrPath.isEmpty ? 'project' : baseNameOrPath,
-  );
+  @override
+  Future<ExportResult> exportZip(List<Node> roots) async {
+    try {
+      final bytes = _buildZipBytes(roots);
+      final filename = _zipName();
 
-  if (roots.isEmpty) {
-    // Always have at least one directory in the ZIP.
-    final keepPath = '$rootDirName/.keep';
-    archive.addFile(ArchiveFile(keepPath, 0, Uint8List(0)));
-  } else {
-    for (final root in roots) {
-      _addNode(
-        archive: archive,
-        node: root,
-        parentPath: rootDirName,
+      final blob = html.Blob([Uint8List.fromList(bytes)]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', filename)
+        ..click();
+      anchor.remove();
+      html.Url.revokeObjectUrl(url);
+
+      return ExportResult(
+        success: true,
+        message: 'ZIP downloaded: $filename',
+      );
+    } catch (e) {
+      return ExportResult(
+        success: false,
+        message: 'Web ZIP export failed: $e',
       );
     }
   }
 
-  final zipData = ZipEncoder().encode(archive);
-  if (zipData == null) {
-    throw Exception('Failed to create ZIP archive.');
+  String _zipName() {
+    final ts = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '')
+        .replaceAll('.', '')
+        .replaceAll('-', '');
+    return 'file_structure_$ts.zip';
   }
 
-  final bytes = Uint8List.fromList(zipData);
-  final blob = html.Blob([bytes], 'application/zip');
-  final url = html.Url.createObjectUrlFromBlob(blob);
+  List<int> _buildZipBytes(List<Node> roots) {
+    final archive = Archive();
 
-  final anchor = html.AnchorElement(href: url)
-    ..style.display = 'none'
-    ..download = '$rootDirName.zip';
-  html.document.body!.children.add(anchor);
-  anchor.click();
-  anchor.remove();
-  html.Url.revokeObjectUrl(url);
+    void walk(Node n, String prefix) {
+      final safe = PathUtils.sanitizeComponent(n.name);
+      final path = prefix.isEmpty ? safe : '${prefix}_$safe';
 
-  return 'Downloaded ZIP: $rootDirName.zip';
-}
-
-void _addNode({
-  required Archive archive,
-  required Node node,
-  required String parentPath,
-}) {
-  final safeName = sanitizeFileComponent(node.name);
-  final currentPath = '$parentPath/$safeName';
-
-  if (node.children.isNotEmpty || node.isFolder) {
-    if (node.children.isEmpty) {
-      // Represent empty folders with a .keep file so they exist after unzip.
-      final keepPath = '$currentPath/.keep';
-      archive.addFile(ArchiveFile(keepPath, 0, Uint8List(0)));
-    } else {
-      for (final child in node.children) {
-        _addNode(
-          archive: archive,
-          node: child,
-          parentPath: currentPath,
-        );
+      if (n.isFolder || n.children.isNotEmpty) {
+        // Add a directory marker (not strictly required, but nice)
+        archive.addFile(ArchiveFile('$path/', 0, const <int>[]));
+        for (final c in n.children) {
+          walk(c, path);
+        }
+      } else {
+        archive.addFile(ArchiveFile(path, 0, const <int>[]));
       }
     }
-  } else {
-    archive.addFile(ArchiveFile(currentPath, 0, Uint8List(0)));
+
+    for (final r in roots) {
+      walk(r, '');
+    }
+
+    return ZipEncoder().encode(archive) ?? <int>[];
   }
 }
+
+FileExporter createFileExporter() => WebFileExporter();
