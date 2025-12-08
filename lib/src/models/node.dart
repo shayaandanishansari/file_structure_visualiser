@@ -6,7 +6,7 @@ class Node {
   });
 
   String name;
-  bool isFolder;
+  final bool isFolder;
   Node? parent;
   final List<Node> children = [];
 
@@ -14,9 +14,7 @@ class Node {
 
   int get depth {
     int d = 0;
-    for (Node? p = parent; p != null; p = p.parent) {
-      d++;
-    }
+    for (Node? p = parent; p != null; p = p.parent) d++;
     return d;
   }
 
@@ -28,4 +26,7 @@ class Node {
     }
     return list;
   }
+
+  /// Convenience
+  bool get hasChildren => children.isNotEmpty;
 }

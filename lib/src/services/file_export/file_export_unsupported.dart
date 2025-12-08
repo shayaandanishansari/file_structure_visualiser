@@ -1,17 +1,16 @@
 import '../../models/node.dart';
 import 'file_export.dart';
 
-class UnsupportedFileExporter implements FileExporter {
+class FileExportUnsupported implements FileExportService {
   @override
-  String get defaultDisplayPath => 'Export not supported on this platform';
+  String get defaultLocationDisplay => 'Export not supported on this platform';
 
   @override
-  Future<ExportResult> exportZip(List<Node> roots) async {
-    return const ExportResult(
-      success: false,
-      message: 'Export is not supported on this platform.',
+  Future<String> exportZip(List<Node> roots) async {
+    throw UnimplementedError(
+      'ZIP export is not supported on this platform build.',
     );
   }
 }
 
-FileExporter createFileExporter() => UnsupportedFileExporter();
+FileExportService createFileExportServiceImpl() => FileExportUnsupported();

@@ -8,69 +8,60 @@ import '../../models/node.dart';
 import '../path_utils.dart';
 import 'file_export.dart';
 
-class WebFileExporter implements FileExporter {
+class FileExportWeb implements FileExportService {
   @override
-  String get defaultDisplayPath => 'Browser download';
+  String get defaultLocationDisplay => 'Browser downloads';
 
   @override
-  Future<ExportResult> exportZip(List<Node> roots) async {
-    try {
-      final bytes = _buildZipBytes(roots);
-      final filename = _zipName();
+  Future<String> exportZip(List<Node> roots) async {
+    final bytes = _buildZipBytes(roots);
+    final name = PathUtils.defaultZipFileName();
 
-      final blob = html.Blob([Uint8List.fromList(bytes)]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', filename)
-        ..click();
-      anchor.remove();
-      html.Url.revokeObjectUrl(url);
-
-      return ExportResult(
-        success: true,
-        message: 'ZIP downloaded: $filename',
-      );
-    } catch (e) {
-      return ExportResult(
-        success: false,
-        message: 'Web ZIP export failed: $e',
-      );
-    }
+    _downloadBytes(bytes, name);
+    return 'Download started';
   }
 
-  String _zipName() {
-    final ts = DateTime.now()
-        .toIso8601String()
-        .replaceAll(':', '')
-        .replaceAll('.', '')
-        .replaceAll('-', '');
-    return 'file_structure_$ts.zip';
-  }
-
-  List<int> _buildZipBytes(List<Node> roots) {
+  Uint8List _buildZipBytes(List<Node> roots) {
     final archive = Archive();
 
-    void walk(Node n, String prefix) {
-      final safe = PathUtils.sanitizeComponent(n.name);
-      final path = prefix.isEmpty ? safe : '${prefix}_$safe';
+    void addNode(Node n, String parentPath) {
+      final safeName = PathUtils.sanitizeComponent(n.name);
+      final currentPath = PathUtils.joinZip(parentPath, safeName);
 
-      if (n.isFolder || n.children.isNotEmpty) {
-        // Add a directory marker (not strictly required, but nice)
-        archive.addFile(ArchiveFile('$path/', 0, const <int>[]));
+      final isDirectory = n.isFolder || n.children.isNotEmpty;
+
+      if (isDirectory) {
+        // Add an explicit directory entry.
+        archive.addFile(ArchiveFile('$currentPath/', 0, const []));
         for (final c in n.children) {
-          walk(c, path);
+          addNode(c, currentPath);
         }
       } else {
-        archive.addFile(ArchiveFile(path, 0, const <int>[]));
+        // Empty file entry.
+        archive.addFile(ArchiveFile(currentPath, 0, const []));
       }
     }
 
     for (final r in roots) {
-      walk(r, '');
+      addNode(r, '');
     }
 
-    return ZipEncoder().encode(archive) ?? <int>[];
+    final encoded = ZipEncoder().encode(archive);
+    return Uint8List.fromList(encoded ?? const <int>[]);
+  }
+
+  void _downloadBytes(Uint8List bytes, String filename) {
+    final blob = html.Blob([bytes], 'application/zip');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..download = filename
+      ..style.display = 'none';
+
+    html.document.body?.children.add(anchor);
+    anchor.click();
+    anchor.remove();
+    html.Url.revokeObjectUrl(url);
   }
 }
 
-FileExporter createFileExporter() => WebFileExporter();
+FileExportService createFileExportServiceImpl() => FileExportWeb();

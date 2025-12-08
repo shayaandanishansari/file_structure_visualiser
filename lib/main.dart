@@ -3,11 +3,11 @@ import 'src/ui/tree_app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FileStructureVisualiserApp());
+  runApp(const FileStructureApp());
 }
 
-class FileStructureVisualiserApp extends StatelessWidget {
-  const FileStructureVisualiserApp({super.key});
+class FileStructureApp extends StatelessWidget {
+  const FileStructureApp({super.key});
 
   @override
   Widget build(BuildContext context) {

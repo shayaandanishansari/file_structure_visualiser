@@ -1,37 +1,31 @@
-/// Utilities that are safe to use on all platforms (no dart:io here).
+import 'package:path/path.dart' as p;
 
+/// Utilities focused on *safe naming* for ZIP entry paths.
+///
+/// We are intentionally NOT dealing with arbitrary user filesystem paths
+/// in V1 to keep the app safe and predictable.
 class PathUtils {
-  /// Replace characters that are illegal or problematic across OSes.
-  static String sanitizeComponent(String s) {
-    final trimmed = s.trim();
-    if (trimmed.isEmpty) return 'untitled';
+  static final RegExp _badChars = RegExp(r'[<>:"/\\|?*\x00-\x1F]');
 
-    // Windows illegal: <>:"/\|?*
-    // Also keep this conservative for cross-platform safety.
-    final bad = RegExp(r'[<>:"/\\|?*\u0000-\u001F]');
-    final cleaned = trimmed.replaceAll(bad, '_').trim();
-
-    return cleaned.isEmpty ? 'untitled' : cleaned;
+  /// Sanitize a single file/folder name component.
+  static String sanitizeComponent(String raw) {
+    final t = raw.replaceAll(_badChars, '_').trim();
+    return t.isEmpty ? 'untitled' : t;
   }
 
-  /// Creates a unique name within a sibling list.
-  static String uniqueName(Iterable<String> existingNames, String base) {
-    final existing = existingNames.toSet();
-    if (!existing.contains(base)) return base;
-
-    int i = 2;
-    while (existing.contains('$base $i')) {
-      i++;
-    }
-    return '$base $i';
-  }
-
-  /// Simple cross-platform join without depending on package:path.
-  static String join(String a, String b, {String separator = '/'}) {
+  /// Builds a safe ZIP path (always uses forward slashes internally).
+  static String joinZip(String a, String b) {
     if (a.isEmpty) return b;
-    if (b.isEmpty) return a;
-    final left = a.endsWith(separator) ? a.substring(0, a.length - 1) : a;
-    final right = b.startsWith(separator) ? b.substring(1) : b;
-    return '$left$separator$right';
+    return p.posix.join(a, b);
   }
+
+  /// Simple timestamped filename.
+  static String defaultZipFileName({String prefix = 'file_structure'}) {
+    final now = DateTime.now();
+    final stamp =
+        '${now.year}${_two(now.month)}${_two(now.day)}_${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
+    return '${prefix}_$stamp.zip';
+  }
+
+  static String _two(int v) => v.toString().padLeft(2, '0');
 }

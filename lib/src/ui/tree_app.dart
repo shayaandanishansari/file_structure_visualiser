@@ -3,7 +3,6 @@ import 'package:flutter/scheduler.dart';
 
 import '../models/node.dart';
 import '../services/file_export/file_export.dart';
-import '../services/path_utils.dart';
 
 class TreeApp extends StatefulWidget {
   const TreeApp({super.key});
@@ -21,12 +20,12 @@ class _TreeAppState extends State<TreeApp> {
   final TextEditingController _editCtrl = TextEditingController();
   final FocusNode _editFocus = FocusNode();
 
-  late final FileExporter exporter;
+  late final FileExportService _exporter;
 
   @override
   void initState() {
     super.initState();
-    exporter = createFileExporter();
+    _exporter = createFileExportService();
 
     final project = Node(name: 'Project', isFolder: true);
     roots.add(project);
@@ -54,7 +53,7 @@ class _TreeAppState extends State<TreeApp> {
               top: 12,
               child: Row(
                 children: [
-                  Expanded(child: _pathBoxReadOnly()),
+                  Expanded(child: _locationBox()),
                   const SizedBox(width: 10),
                   _iconBtn(
                     icon: Icons.delete_outline_rounded,
@@ -64,8 +63,8 @@ class _TreeAppState extends State<TreeApp> {
                   const SizedBox(width: 10),
                   _iconBtn(
                     icon: Icons.download_rounded,
-                    tooltip: 'Export ZIP (safe mode)',
-                    onTap: _exportZipSafe,
+                    tooltip: 'Export ZIP',
+                    onTap: _exportZip,
                   ),
                 ],
               ),
@@ -116,6 +115,47 @@ class _TreeAppState extends State<TreeApp> {
                     onAddChild: () => _addChild(isFolder: false),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ---------- LOCATION BOX (V1 SAFE, NO PICKER, NO TEXT INPUT) ----------
+  Widget _locationBox() {
+    return Tooltip(
+      message: 'Safe default export location',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF15172A),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.folder_open, color: Colors.white70, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _exporter.defaultLocationDisplay,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'ZIP only',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: .3,
               ),
             ),
           ],
@@ -247,36 +287,6 @@ class _TreeAppState extends State<TreeApp> {
   }
 
   /// ---------- CONTROLS ----------
-  Widget _pathBoxReadOnly() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF15172A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.folder_open, color: Colors.white70, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              exporter.defaultDisplayPath,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12.8,
-                fontWeight: FontWeight.w500,
-                letterSpacing: .15,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _iconBtn({
     required IconData icon,
     required VoidCallback onTap,
@@ -385,21 +395,14 @@ class _TreeAppState extends State<TreeApp> {
     setState(() {
       final cur = selected!;
       final base = isFolder ? 'New Folder' : 'New File';
-
       if (cur.isRoot) {
-        final n = Node(
-          name: PathUtils.uniqueName(roots.map((e) => e.name), base),
-          isFolder: isFolder,
-        );
+        final n = Node(name: _uniqueName(roots, base), isFolder: isFolder);
         final i = roots.indexOf(cur);
         roots.insert(i + 1, n);
       } else {
         final list = cur.parent!.children;
-        final n = Node(
-          name: PathUtils.uniqueName(list.map((e) => e.name), base),
-          isFolder: isFolder,
-        )..parent = cur.parent;
-
+        final n = Node(name: _uniqueName(list, base), isFolder: isFolder)
+          ..parent = cur.parent;
         final i = list.indexOf(cur);
         list.insert(i + 1, n);
       }
@@ -414,10 +417,8 @@ class _TreeAppState extends State<TreeApp> {
     setState(() {
       final cur = selected!;
       final base = isFolder ? 'New Folder' : 'New File';
-      final n = Node(
-        name: PathUtils.uniqueName(cur.children.map((e) => e.name), base),
-        isFolder: isFolder,
-      )..parent = cur;
+      final n = Node(name: _uniqueName(cur.children, base), isFolder: isFolder)
+        ..parent = cur;
       cur.children.add(n);
     });
   }
@@ -432,7 +433,6 @@ class _TreeAppState extends State<TreeApp> {
       if (target.isRoot) {
         final idx = roots.indexOf(target);
         roots.removeAt(idx);
-
         if (roots.isEmpty) {
           final fresh = Node(name: 'Project', isFolder: true);
           roots.add(fresh);
@@ -442,10 +442,11 @@ class _TreeAppState extends State<TreeApp> {
         }
       } else {
         final parent = target.parent!;
-        parent.children.remove(target);
+        final list = parent.children;
+        final idx = list.indexOf(target);
+        list.removeAt(idx);
         selected = parent;
       }
-
       if (identical(editingNode, target)) {
         editingNode = null;
       }
@@ -460,29 +461,36 @@ class _TreeAppState extends State<TreeApp> {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _editFocus.requestFocus();
-        _editCtrl.selection =
-            TextSelection(baseOffset: 0, extentOffset: _editCtrl.text.length);
+        _editCtrl.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _editCtrl.text.length,
+        );
       }
     });
   }
 
   void _commitRename(Node node, String raw) {
-    final newName = PathUtils.sanitizeComponent(raw);
+    final newName = raw.trim().isEmpty ? 'untitled' : raw.trim();
     setState(() {
       node.name = newName;
       editingNode = null;
     });
   }
 
-  Future<void> _exportZipSafe() async {
-    final result = await exporter.exportZip(roots);
+  String _uniqueName(List<Node> siblings, String base) {
+    final existing = siblings.map((e) => e.name).toSet();
+    if (!existing.contains(base)) return base;
+    int i = 2;
+    while (existing.contains('$base $i')) i++;
+    return '$base $i';
+  }
 
-    if (!mounted) return;
-
-    if (result.success && result.savedPath != null) {
-      _toast('${result.message}\n${result.savedPath}');
-    } else {
-      _toast(result.message);
+  Future<void> _exportZip() async {
+    try {
+      final msg = await _exporter.exportZip(roots);
+      _toast(msg);
+    } catch (e) {
+      _toast('Export failed: $e');
     }
   }
 
