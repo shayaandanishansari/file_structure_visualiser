@@ -13,11 +13,11 @@ This is a simple and clean app that lets you create complex file structures visu
   - Use the bin button to delete a node (also deletes it's children)
 
 ## DOWNLOAD
-- Go to [website](https://shayaandanishansari.github.io/file_structure_visualiser/) for web use
-- Go to [releases] to download for your native platform
+- Go to [Website](https://shayaandanishansari.github.io/file_structure_visualiser/) for web use
+- Go to [Releases](https://github.com/shayaandanishansari/file_structure_visualiser/releases) to download for your native platform
 
 
-*For Developers*
+# *// For Developers //*
 
 ## DOWNLOAD AND RUN
 - Requirements
