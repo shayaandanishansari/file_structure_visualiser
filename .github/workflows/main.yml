@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - release
+  workflow_dispatch:
 
+# Default token perms for all jobs
 permissions:
   contents: write
 
@@ -16,16 +18,21 @@ jobs:
   # 1) WEB: build + deploy to Pages
   # -------------------------------
   web_deploy:
+    name: Web Deploy
     runs-on: ubuntu-latest
+    concurrency:
+      group: web-pages-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Pub get
         run: flutter pub get
@@ -33,32 +40,42 @@ jobs:
       - name: Enable Web
         run: flutter config --enable-web
 
-      # Base href automatically matches repo name
       - name: Build Web
         run: flutter build web --release --base-href="/${{ github.event.repository.name }}/"
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: build/web
 
-
   # -------------------------------
   # 2) LINUX build
   # -------------------------------
   linux_build:
+    name: Linux Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build \
+            libgtk-3-dev \
+            libblkid-dev \
+            liblzma-dev \
+            pkg-config
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Pub get
         run: flutter pub get
@@ -75,26 +92,34 @@ jobs:
           zip -r "$GITHUB_WORKSPACE/${APP_ID}_linux.zip" .
 
       - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux
           path: ${{ env.APP_ID }}_linux.zip
-
+          if-no-files-found: error
 
   # -------------------------------
   # 3) ANDROID build
   # -------------------------------
   android_build:
+    name: Android Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Pub get
         run: flutter pub get
@@ -107,26 +132,28 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "${APP_ID}_android.apk"
 
       - name: Upload Android Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android
           path: ${{ env.APP_ID }}_android.apk
-
+          if-no-files-found: error
 
   # -------------------------------
   # 4) WINDOWS build
   # -------------------------------
   windows_build:
+    name: Windows Build
     runs-on: windows-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Pub get
         run: flutter pub get
@@ -145,26 +172,28 @@ jobs:
           Compress-Archive -Path $src -DestinationPath $dst -Force
 
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: windows
           path: ${{ env.APP_ID }}_windows.zip
-
+          if-no-files-found: error
 
   # -------------------------------
   # 5) macOS + iOS build
   # -------------------------------
   apple_build:
+    name: Apple (macOS + iOS) Build
     runs-on: macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Pub get
         run: flutter pub get
@@ -177,37 +206,45 @@ jobs:
 
       - name: Package macOS
         run: |
-          APP_PATH="build/macos/Build/Products/Release/*.app"
-          # zip with proper mac metadata
-          ditto -c -k --sequesterRsrc --keepParent $APP_PATH "${APP_ID}_macos.zip"
+          APP_PATH="$(ls -d build/macos/Build/Products/Release/*.app | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found for macOS build."
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "${APP_ID}_macos.zip"
 
-      # iOS without signing (good enough for portfolio)
       - name: Build iOS (no codesign)
         run: flutter build ios --release --no-codesign
 
       - name: Package iOS .app
         run: |
           IOS_APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$IOS_APP" ]; then
+            echo "iOS .app not found."
+            exit 1
+          fi
           ditto -c -k --sequesterRsrc --keepParent "$IOS_APP" "${APP_ID}_ios_app.zip"
 
       - name: Upload macOS Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: macos
           path: ${{ env.APP_ID }}_macos.zip
+          if-no-files-found: error
 
       - name: Upload iOS Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ios
           path: ${{ env.APP_ID }}_ios_app.zip
-
+          if-no-files-found: error
 
   # -------------------------------
   # 6) CREATE GITHUB RELEASE
   #    (excluding the web build)
   # -------------------------------
   publish_release:
+    name: Publish Release
     needs:
       - linux_build
       - android_build
@@ -217,41 +254,21 @@ jobs:
 
     steps:
       - name: Checkout (full history for tagging)
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download Linux
-        uses: actions/download-artifact@v3
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: linux
           path: dist
 
-      - name: Download Android
-        uses: actions/download-artifact@v3
-        with:
-          name: android
-          path: dist
+      - name: Flatten dist
+        run: |
+          # download-artifact@v4 creates subfolders per artifact name
+          find dist -type f -maxdepth 2 -print -exec mv -t dist {} \;
+          find dist -type d -empty -delete
 
-      - name: Download Windows
-        uses: actions/download-artifact@v3
-        with:
-          name: windows
-          path: dist
-
-      - name: Download macOS
-        uses: actions/download-artifact@v3
-        with:
-          name: macos
-          path: dist
-
-      - name: Download iOS
-        uses: actions/download-artifact@v3
-        with:
-          name: ios
-          path: dist
-
-      # Auto-tag so YOU don't have to manage tags manually
       - name: Create auto tag
         run: |
           TAG="release-${{ github.run_number }}"
@@ -262,7 +279,7 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: "Release ${{ github.run_number }}"
@@ -283,6 +300,7 @@ jobs:
             dist/${{ env.APP_ID }}_linux.zip
             dist/${{ env.APP_ID }}_android.apk
             dist/${{ env.APP_ID }}_ios_app.zip
+
 
 
 
