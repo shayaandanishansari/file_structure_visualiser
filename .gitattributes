@@ -1,16 +1,16 @@
 # Tell GitHub to ignore platform-specific native code when calculating language statistics
-frontend/windows/**/* linguist-detectable=false
-frontend/linux/**/* linguist-detectable=false
-frontend/macos/**/* linguist-detectable=false
+windows/**/* linguist-detectable=false
+linux/**/* linguist-detectable=false
+macos/**/* linguist-detectable=false
 
 # Also ignore build artifacts
-frontend/build/ export-ignore
+build/ export-ignore
 **/build/ export-ignore
 
 # Ignore generated plugin registrant files
-frontend/**/generated_plugin_registrant.* linguist-detectable=false
+**/generated_plugin_registrant.* linguist-detectable=false
 
 # Additional generated files
-frontend/**/generated_plugins.* linguist-detectable=false
-frontend/**/Pods/**/* linguist-detectable=false
-frontend/ios/.symlinks/**/* linguist-detectable=false
+**/generated_plugins.* linguist-detectable=false
+**/Pods/**/* linguist-detectable=false
+ios/.symlinks/**/* linguist-detectable=false
