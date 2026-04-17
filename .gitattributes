@@ -1,0 +1,17 @@
+# Exclude unnecessary C++ files from GitHub's language statistics
+*.cpp linguist-ignore-as-documentation
+*.h linguist-ignore-as-documentation
+*.hpp linguist-ignore-as-documentation
+*.cxx linguist-ignore-as-documentation
+*.cc linguist-ignore-as-documentation
+
+# If there are specific C++ files that were accidentally included, you can also exclude entire directories
+**/build/** linguist-ignore-as-documentation
+**/windows/runner/** linguist-ignore-as-documentation
+**/android/** linguist-ignore-as-documentation
+**/ios/** linguist-ignore-as-documentation
+**/macos/** linguist-ignore-as-documentation
+**/linux/** linguist-ignore-as-documentation
+
+# Explicitly mark Dart files as the primary language for this Flutter project
+*.dart linguist-detectable=true
